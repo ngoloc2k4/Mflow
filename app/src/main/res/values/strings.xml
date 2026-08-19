@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Mflow</string>
+    <string name="notification_channel_name">Mflow Playback</string>
+    <string name="notification_channel_description">Notifications for music playback controls</string>
+</resources>

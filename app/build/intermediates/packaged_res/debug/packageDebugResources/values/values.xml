@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Mflow</string>
+    <string name="notification_channel_description">Notifications for music playback controls</string>
+    <string name="notification_channel_name">Mflow Playback</string>
+    <style name="Theme.Mflow" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#121212</item>
+        <item name="android:statusBarColor">#121212</item>
+        <item name="android:navigationBarColor">#121212</item>
+    </style>
+</resources>
