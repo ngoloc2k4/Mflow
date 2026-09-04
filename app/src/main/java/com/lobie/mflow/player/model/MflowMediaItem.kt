@@ -14,7 +14,10 @@ data class MflowMediaItem(
     val durationMs: Long = 0,
     val thumbnailUrl: String? = null,
     val streamUrl: String? = null,
-    val isFavorite: Boolean = false
+    val isFavorite: Boolean = false,
+    val isError: Boolean = false,
+    val errorMessage: String? = null,
+    val isLoading: Boolean = false
 ) {
     fun toMediaItem(): MediaItem {
         val metadata = MediaMetadata.Builder()
@@ -26,9 +29,22 @@ data class MflowMediaItem(
 
         return MediaItem.Builder()
             .setMediaId(id)
-            .setUri(streamUrl)
+            .setUri(streamUrl ?: "") // Empty URI if not available - will trigger error handling
             .setMediaMetadata(metadata)
+            .setCustomCacheKey(id) // Enable caching with video ID as key
             .build()
+    }
+
+    fun copyWithStreamUrl(url: String): MflowMediaItem {
+        return copy(streamUrl = url, isError = false, errorMessage = null, isLoading = false)
+    }
+
+    fun copyWithError(message: String): MflowMediaItem {
+        return copy(isError = true, errorMessage = message, isLoading = false)
+    }
+
+    fun copyWithLoading(): MflowMediaItem {
+        return copy(isLoading = true, isError = false, errorMessage = null)
     }
 
     companion object {
@@ -41,6 +57,24 @@ data class MflowMediaItem(
                 album = meta.albumTitle?.toString(),
                 thumbnailUrl = meta.artworkUri?.toString(),
                 streamUrl = streamUrl ?: item.localConfiguration?.uri?.toString()
+            )
+        }
+
+        fun fromSearchItem(
+            id: String,
+            title: String,
+            artist: String,
+            album: String? = null,
+            durationSeconds: Long = 0,
+            thumbnailUrl: String? = null
+        ): MflowMediaItem {
+            return MflowMediaItem(
+                id = id,
+                title = title,
+                artist = artist,
+                album = album,
+                durationMs = durationSeconds * 1000,
+                thumbnailUrl = thumbnailUrl
             )
         }
     }

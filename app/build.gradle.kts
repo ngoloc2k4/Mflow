@@ -95,6 +95,7 @@ dependencies {
     implementation(libs.ktor.client.content.negotiation)
     implementation(libs.ktor.serialization.kotlinx.json)
     implementation(libs.conscrypt.android)
+    implementation(libs.okhttp)
 
     // Room Database
     implementation(libs.room.runtime)

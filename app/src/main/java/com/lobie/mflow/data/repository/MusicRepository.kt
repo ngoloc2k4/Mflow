@@ -34,7 +34,7 @@ class MusicRepository(
         if (!forceRefresh) {
             val cachedSong = songDao.getSong(videoId)
             if (cachedSong != null && cachedSong.cachedStreamUrl != null &&
-                cachedSong.streamExpireAt > System.currentTimeMillis() + (60 * 1000)
+                cachedSong.streamExpireAt > System.currentTimeMillis() + (5 * 60 * 1000) // 5 minutes buffer
             ) {
                 return StreamInfo(
                     videoId = cachedSong.id,
@@ -48,18 +48,21 @@ class MusicRepository(
 
         val freshInfo = api.getStreamInfo(videoId) ?: return null
 
-        songDao.insertSong(
-            SongEntity(
-                id = videoId,
-                title = "",
-                artist = "",
-                album = null,
-                durationMs = 0,
-                thumbnailUrl = null,
-                cachedStreamUrl = freshInfo.audioUrl,
-                streamExpireAt = freshInfo.expireAtTimestamp
+        // Only cache if we have valid data
+        if (freshInfo.audioUrl.isNotEmpty()) {
+            songDao.insertSong(
+                SongEntity(
+                    id = videoId,
+                    title = "",
+                    artist = "",
+                    album = null,
+                    durationMs = 0,
+                    thumbnailUrl = null,
+                    cachedStreamUrl = freshInfo.audioUrl,
+                    streamExpireAt = freshInfo.expireAtTimestamp
+                )
             )
-        )
+        }
 
         return freshInfo
     }
