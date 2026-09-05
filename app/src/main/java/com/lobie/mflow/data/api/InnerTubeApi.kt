@@ -201,7 +201,10 @@ class InnerTubeApi(private val client: HttpClient) {
         }
     }
 
-    suspend fun getStreamInfo(videoId: String): StreamInfo? = withContext(Dispatchers.IO) {
+    suspend fun getStreamInfo(videoId: String, retryCount: Int = 0): StreamInfo? = withContext(Dispatchers.IO) {
+        val maxRetries = 2
+        val currentRetry = retryCount.coerceAtMost(maxRetries)
+        
         // Method 1: Extract HLS stream URL from mobile web watch page (Plays without 403 / Signature issues)
         try {
             val html = client.get("https://m.youtube.com/watch?v=$videoId") {
@@ -228,20 +231,35 @@ class InnerTubeApi(private val client: HttpClient) {
                             )
                         }
 
-                        // Try direct audio formats
+                        // Try direct audio formats - prefer higher bitrate
                         val formats = (streamingData["adaptiveFormats"]?.jsonArray ?: JsonArray(emptyList())) +
                                 (streamingData["formats"]?.jsonArray ?: JsonArray(emptyList()))
+                        
+                        var bestFormat: JsonObject? = null
+                        var bestBitrate = 0
+                        
                         for (fmt in formats) {
                             val fmtObj = fmt.jsonObject
                             val mime = fmtObj["mimeType"]?.jsonPrimitive?.contentOrNull.orEmpty()
-                            val url = fmtObj["url"]?.jsonPrimitive?.contentOrNull
-                            if (mime.startsWith("audio/") && !url.isNullOrEmpty()) {
-                                Log.d("MflowStream", "Resolved Direct Audio for $videoId: $url")
+                            if (mime.startsWith("audio/")) {
+                                val bitrate = fmtObj["bitrate"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0
+                                if (bitrate > bestBitrate) {
+                                    bestBitrate = bitrate
+                                    bestFormat = fmtObj
+                                }
+                            }
+                        }
+                        
+                        if (bestFormat != null) {
+                            val url = bestFormat["url"]?.jsonPrimitive?.contentOrNull
+                            val mime = bestFormat["mimeType"]?.jsonPrimitive?.contentOrNull.orEmpty()
+                            if (!url.isNullOrEmpty()) {
+                                Log.d("MflowStream", "Resolved Direct Audio for $videoId (bitrate: $bestBitrate)")
                                 return@withContext StreamInfo(
                                     videoId = videoId,
                                     audioUrl = url,
                                     format = if (mime.contains("opus")) "opus" else "m4a",
-                                    bitrate = fmtObj["bitrate"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 128000,
+                                    bitrate = bestBitrate,
                                     expireAtTimestamp = System.currentTimeMillis() + (5 * 3600 * 1000)
                                 )
                             }
@@ -250,7 +268,7 @@ class InnerTubeApi(private val client: HttpClient) {
                 }
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.e("MflowStream", "Method 1 (mobile) failed for $videoId: ${e.message}")
         }
 
         // Method 2: Desktop Watch Page Extraction
@@ -273,10 +291,139 @@ class InnerTubeApi(private val client: HttpClient) {
                 }
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.e("MflowStream", "Method 2 (desktop) failed for $videoId: ${e.message}")
         }
 
-        Log.e("MflowStream", "Failed to resolve stream for $videoId")
+        // Method 3: Try with different client (ANDROID_MUSIC) if previous methods failed
+        if (currentRetry < maxRetries) {
+            try {
+                Log.d("MflowStream", "Attempting method 3 (ANDROID_MUSIC client) for $videoId (retry $currentRetry/$maxRetries)")
+                val requestBody = """
+                {
+                    "context": {
+                        "client": {
+                            "clientName": "ANDROID_MUSIC",
+                            "clientVersion": "6.35.52",
+                            "androidSdkVersion": 30,
+                            "hl": "vi",
+                            "gl": "VN"
+                        }
+                    },
+                    "videoId": "$videoId",
+                    "contentCheckOk": true,
+                    "racyCheckOk": true
+                }
+                """.trimIndent()
+                
+                val responseText = client.post("https://music.youtube.com/youtubei/v1/player") {
+                    contentType(ContentType.Application.Json)
+                    header("User-Agent", "com.google.android.apps.youtube.music/6.35.52 (Linux; U; Android 11)")
+                    setBody(requestBody)
+                }.bodyAsText()
+                
+                val root = json.parseToJsonElement(responseText).jsonObject
+                val streamingData = root["streamingData"]?.jsonObject
+                if (streamingData != null) {
+                    val hlsUrl = streamingData["hlsManifestUrl"]?.jsonPrimitive?.contentOrNull
+                    if (!hlsUrl.isNullOrEmpty()) {
+                        Log.d("MflowStream", "Resolved ANDROID_MUSIC HLS Stream for $videoId")
+                        return@withContext StreamInfo(
+                            videoId = videoId,
+                            audioUrl = hlsUrl,
+                            format = "hls",
+                            bitrate = 160000,
+                            expireAtTimestamp = System.currentTimeMillis() + (5 * 3600 * 1000)
+                        )
+                    }
+                    
+                    val formats = (streamingData["adaptiveFormats"]?.jsonArray ?: JsonArray(emptyList()))
+                    for (fmt in formats) {
+                        val fmtObj = fmt.jsonObject
+                        val mime = fmtObj["mimeType"]?.jsonPrimitive?.contentOrNull.orEmpty()
+                        val url = fmtObj["url"]?.jsonPrimitive?.contentOrNull
+                        if (mime.startsWith("audio/") && !url.isNullOrEmpty()) {
+                            Log.d("MflowStream", "Resolved ANDROID_MUSIC Direct Audio for $videoId")
+                            return@withContext StreamInfo(
+                                videoId = videoId,
+                                audioUrl = url,
+                                format = if (mime.contains("opus")) "opus" else "m4a",
+                                bitrate = fmtObj["bitrate"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 128000,
+                                expireAtTimestamp = System.currentTimeMillis() + (5 * 3600 * 1000)
+                            )
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("MflowStream", "Method 3 (ANDROID_MUSIC) failed for $videoId: ${e.message}")
+            }
+        }
+
+        // Method 4: Fallback to WEB_REMIX client as last resort
+        try {
+            Log.d("MflowStream", "Attempting method 4 (WEB_REMIX client) for $videoId")
+            val requestBody = """
+            {
+                "context": {
+                    "client": {
+                        "clientName": "WEB_REMIX",
+                        "clientVersion": "1.20240722.01.00",
+                        "hl": "vi",
+                        "gl": "VN"
+                    }
+                },
+                "videoId": "$videoId",
+                "contentCheckOk": true,
+                "racyCheckOk": true
+            }
+            """.trimIndent()
+            
+            val responseText = client.post("https://music.youtube.com/youtubei/v1/player") {
+                contentType(ContentType.Application.Json)
+                header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                header("Origin", "https://music.youtube.com")
+                header("Referer", "https://music.youtube.com/")
+                header("X-YouTube-Client-Name", "67")
+                header("X-YouTube-Client-Version", "1.20240722.01.00")
+                setBody(requestBody)
+            }.bodyAsText()
+            
+            val root = json.parseToJsonElement(responseText).jsonObject
+            val streamingData = root["streamingData"]?.jsonObject
+            if (streamingData != null) {
+                val hlsUrl = streamingData["hlsManifestUrl"]?.jsonPrimitive?.contentOrNull
+                if (!hlsUrl.isNullOrEmpty()) {
+                    Log.d("MflowStream", "Resolved WEB_REMIX HLS Stream for $videoId")
+                    return@withContext StreamInfo(
+                        videoId = videoId,
+                        audioUrl = hlsUrl,
+                        format = "hls",
+                        bitrate = 160000,
+                        expireAtTimestamp = System.currentTimeMillis() + (5 * 3600 * 1000)
+                    )
+                }
+                
+                val formats = (streamingData["adaptiveFormats"]?.jsonArray ?: JsonArray(emptyList()))
+                for (fmt in formats) {
+                    val fmtObj = fmt.jsonObject
+                    val mime = fmtObj["mimeType"]?.jsonPrimitive?.contentOrNull.orEmpty()
+                    val url = fmtObj["url"]?.jsonPrimitive?.contentOrNull
+                    if (mime.startsWith("audio/") && !url.isNullOrEmpty()) {
+                        Log.d("MflowStream", "Resolved WEB_REMIX Direct Audio for $videoId")
+                        return@withContext StreamInfo(
+                            videoId = videoId,
+                            audioUrl = url,
+                            format = if (mime.contains("opus")) "opus" else "m4a",
+                            bitrate = fmtObj["bitrate"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 128000,
+                            expireAtTimestamp = System.currentTimeMillis() + (5 * 3600 * 1000)
+                        )
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("MflowStream", "Method 4 (WEB_REMIX) failed for $videoId: ${e.message}")
+        }
+
+        Log.e("MflowStream", "Failed to resolve stream for $videoId after all methods")
         return@withContext null
     }
 

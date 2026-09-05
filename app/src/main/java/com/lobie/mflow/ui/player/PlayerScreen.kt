@@ -105,6 +105,30 @@ fun PlayerScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
+        // Show error message if any
+        if (song.isError && !song.errorMessage.isNullOrEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp)
+                    .background(
+                        color = androidx.compose.ui.graphics.Color(0xFFFF5252).copy(alpha = 0.2f),
+                        shape = RoundedCornerShape(8.dp)
+                    )
+                    .padding(12.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = song.errorMessage!!,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = androidx.compose.ui.graphics.Color(0xFFFF5252),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+        }
+
         // Tabs: Song / Lyrics
         TabRow(
             selectedTabIndex = selectedTab,
@@ -175,7 +199,8 @@ fun PlayerScreen(
                         thumbColor = PrimaryRed,
                         activeTrackColor = PrimaryRed,
                         inactiveTrackColor = DarkSurfaceVariant
-                    )
+                    ),
+                    enabled = !song.isError
                 )
 
                 Row(
@@ -203,11 +228,15 @@ fun PlayerScreen(
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(onClick = { /* Previous */ }, modifier = Modifier.size(48.dp)) {
+                IconButton(
+                    onClick = { /* Previous */ },
+                    modifier = Modifier.size(48.dp),
+                    enabled = !song.isError
+                ) {
                     Icon(
                         imageVector = Icons.Default.SkipPrevious,
                         contentDescription = "Previous",
-                        tint = TextPrimary,
+                        tint = if (song.isError) TextSecondary.copy(alpha = 0.5f) else TextPrimary,
                         modifier = Modifier.size(36.dp)
                     )
                 }
@@ -216,24 +245,32 @@ fun PlayerScreen(
                     modifier = Modifier
                         .size(64.dp)
                         .clip(CircleShape)
-                        .background(PrimaryRed),
+                        .background(if (song.isError) DarkSurfaceVariant else PrimaryRed),
                     contentAlignment = Alignment.Center
                 ) {
-                    IconButton(onClick = onPlayPauseClick, modifier = Modifier.fillMaxSize()) {
+                    IconButton(
+                        onClick = onPlayPauseClick,
+                        modifier = Modifier.fillMaxSize(),
+                        enabled = !song.isError
+                    ) {
                         Icon(
                             imageVector = if (state.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                             contentDescription = if (state.isPlaying) "Pause" else "Play",
-                            tint = TextPrimary,
+                            tint = if (song.isError) TextSecondary.copy(alpha = 0.5f) else TextPrimary,
                             modifier = Modifier.size(36.dp)
                         )
                     }
                 }
 
-                IconButton(onClick = { /* Next */ }, modifier = Modifier.size(48.dp)) {
+                IconButton(
+                    onClick = { /* Next */ },
+                    modifier = Modifier.size(48.dp),
+                    enabled = !song.isError
+                ) {
                     Icon(
                         imageVector = Icons.Default.SkipNext,
                         contentDescription = "Next",
-                        tint = TextPrimary,
+                        tint = if (song.isError) TextSecondary.copy(alpha = 0.5f) else TextPrimary,
                         modifier = Modifier.size(36.dp)
                     )
                 }

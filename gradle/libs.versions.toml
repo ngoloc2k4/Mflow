@@ -40,6 +40,8 @@ ktor-client-okhttp = { group = "io.ktor", name = "ktor-client-okhttp", version.r
 ktor-client-content-negotiation = { group = "io.ktor", name = "ktor-client-content-negotiation", version.ref = "ktor" }
 ktor-serialization-kotlinx-json = { group = "io.ktor", name = "ktor-serialization-kotlinx-json", version.ref = "ktor" }
 
+okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version = "4.12.0" }
+
 conscrypt-android = { group = "org.conscrypt", name = "conscrypt-android", version.ref = "conscrypt" }
 
 room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
